@@ -10,7 +10,7 @@
   "scripts": {
     "build": "npm run build --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present",
+    "test": "vitest run apps packages --config vitest.config.ts",
     "test:unit": "vitest run apps packages --config vitest.config.ts",
     "test:integration": "node tests/integration/run-default-flow.mjs",
     "test:integration:flags": "node tests/integration/run-flags-flow.mjs",

@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run src/*.test.ts --config ../../vitest.config.ts"
+    "test": "cd ../.. && vitest run packages/core/src --config vitest.config.ts"
   },
   "dependencies": {
     "cron-parser": "^5.4.0",

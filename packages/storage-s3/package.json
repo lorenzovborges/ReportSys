@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run src/index.test.ts --config ../../vitest.config.ts"
+    "test": "cd ../.. && vitest run packages/storage-s3/src --config vitest.config.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.876.0",

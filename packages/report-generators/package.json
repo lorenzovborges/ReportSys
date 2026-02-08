@@ -7,7 +7,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run src/index.test.ts --config ../../vitest.config.ts"
+    "test": "cd ../.. && vitest run packages/report-generators/src --config vitest.config.ts"
   },
   "dependencies": {
     "@reportsys/contracts": "0.1.0",

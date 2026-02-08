@@ -9,7 +9,7 @@
     "dev": "tsx src/index.ts",
     "start": "node dist/apps/api/src/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run src/*.test.ts --config ../../vitest.config.ts"
+    "test": "cd ../.. && vitest run apps/api/src --config vitest.config.ts"
   },
   "dependencies": {
     "@reportsys/contracts": "0.1.0",
