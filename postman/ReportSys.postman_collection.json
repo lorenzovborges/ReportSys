@@ -1,0 +1,412 @@
+{
+  "info": {
+    "_postman_id": "4be1c6bf-b5d2-4602-b5df-dfb77dbba11f",
+    "name": "ReportSys",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "event": [
+    {
+      "listen": "prerequest",
+      "script": {
+        "type": "text/javascript",
+        "exec": [
+          "const generatedIdempotencyKey = pm.variables.replaceIn('{{$guid}}');",
+          "pm.collectionVariables.set('idempotencyKey', generatedIdempotencyKey);"
+        ]
+      }
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{baseUrl}}/health",
+          "host": ["{{baseUrl}}"],
+          "path": ["health"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('health payload', function () {",
+              "  pm.expect(body).to.have.property('status', 'ok');",
+              "  pm.expect(body).to.have.property('storageDriver');",
+              "  pm.expect(body).to.have.property('externalStorageEnabled');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create Report",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" },
+          { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reportDefinitionId\": \"sales-by-day\",\n  \"format\": \"json\",\n  \"filters\": {\n    \"status\": \"paid\"\n  },\n  \"timezone\": \"UTC\",\n  \"sourceCollection\": \"reportSource\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/reports",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "reports"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 202', function () { pm.response.to.have.status(202); });",
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('jobId', body.id);",
+              "pm.test('job id captured', function () {",
+              "  pm.expect(body.id).to.be.a('string');",
+              "  pm.expect(body.status).to.eql('queued');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create Report (ZIP Multi-Format)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" },
+          { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reportDefinitionId\": \"sales-zip\",\n  \"format\": \"zip\",\n  \"includeFormats\": [\"csv\", \"json\", \"xlsx\", \"pdf\"],\n  \"filters\": {\n    \"status\": \"paid\"\n  },\n  \"timezone\": \"UTC\",\n  \"sourceCollection\": \"reportSource\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/reports",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "reports"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 202', function () { pm.response.to.have.status(202); });",
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('zipJobId', body.id);",
+              "pm.collectionVariables.set('jobId', body.id);",
+              "pm.test('zip job id captured', function () {",
+              "  pm.expect(body.id).to.be.a('string');",
+              "  pm.expect(body.status).to.eql('queued');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create Report (ReduceSpec)",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" },
+          { "key": "Idempotency-Key", "value": "{{idempotencyKey}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"reportDefinitionId\": \"sales-reduce\",\n  \"format\": \"csv\",\n  \"filters\": {\n    \"status\": \"paid\"\n  },\n  \"reduceSpec\": {\n    \"groupBy\": [\"status\"],\n    \"metrics\": [\n      { \"op\": \"count\", \"as\": \"totalOrders\" },\n      { \"op\": \"sum\", \"field\": \"amount\", \"as\": \"sumAmount\" },\n      { \"op\": \"avg\", \"field\": \"amount\", \"as\": \"avgAmount\" }\n    ]\n  },\n  \"partitionSpec\": {\n    \"strategy\": \"objectIdRange\",\n    \"chunks\": 8\n  },\n  \"sourceCollection\": \"reportSource\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/reports",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "reports"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 202', function () { pm.response.to.have.status(202); });",
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('reduceJobId', body.id);",
+              "pm.collectionVariables.set('jobId', body.id);",
+              "pm.test('reduce job id captured', function () {",
+              "  pm.expect(body.id).to.be.a('string');",
+              "  pm.expect(body.status).to.eql('queued');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get Report Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/v1/reports/{{jobId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "reports", "{{jobId}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('contract fields', function () {",
+              "  pm.expect(body).to.have.property('id');",
+              "  pm.expect(body).to.have.property('status');",
+              "  pm.expect(body).to.have.property('artifact');",
+              "  pm.expect(body.artifact).to.have.property('mode');",
+              "  pm.expect(body.artifact).to.have.property('available');",
+              "  pm.expect(body).to.have.property('rowCount');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get Download Link",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/v1/reports/{{jobId}}/download",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "reports", "{{jobId}}", "download"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('download contract', function () {",
+              "  pm.expect(body).to.have.property('available');",
+              "  if (body.available) {",
+              "    pm.expect(body.url).to.be.a('string');",
+              "  } else {",
+              "    pm.expect(body).to.have.property('reason');",
+              "    pm.expect(body).to.have.property('mode');",
+              "  }",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Create Schedule",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Daily Sales\",\n  \"cron\": \"*/5 * * * *\",\n  \"reportDefinitionId\": \"sales-by-day\",\n  \"format\": \"zip\",\n  \"includeFormats\": [\"csv\", \"json\"],\n  \"timezone\": \"UTC\",\n  \"enabled\": true,\n  \"sourceCollection\": \"reportSource\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/report-schedules",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "report-schedules"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 201', function () { pm.response.to.have.status(201); });",
+              "const body = pm.response.json();",
+              "pm.collectionVariables.set('scheduleId', body.id);",
+              "pm.test('schedule id captured', function () {",
+              "  pm.expect(body.id).to.be.a('string');",
+              "  pm.expect(body.enabled).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List Schedules",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/v1/report-schedules",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "report-schedules"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('array response', function () {",
+              "  pm.expect(Array.isArray(body)).to.eql(true);",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Update Schedule",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          { "key": "Content-Type", "value": "application/json" },
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Daily Sales Updated\",\n  \"enabled\": true,\n  \"cron\": \"*/10 * * * *\"\n}"
+        },
+        "url": {
+          "raw": "{{baseUrl}}/v1/report-schedules/{{scheduleId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "report-schedules", "{{scheduleId}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('updated fields', function () {",
+              "  pm.expect(body.name).to.eql('Daily Sales Updated');",
+              "  pm.expect(body.cron).to.eql('*/10 * * * *');",
+              "});"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Delete Schedule",
+      "request": {
+        "method": "DELETE",
+        "header": [
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/v1/report-schedules/{{scheduleId}}",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "report-schedules", "{{scheduleId}}"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 204', function () { pm.response.to.have.status(204); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Noop Mode Validation",
+      "request": {
+        "method": "GET",
+        "header": [
+          { "key": "X-API-Key", "value": "{{apiKey}}" },
+          { "key": "X-Tenant-Id", "value": "{{tenantId}}" }
+        ],
+        "url": {
+          "raw": "{{baseUrl}}/v1/reports/{{jobId}}/download",
+          "host": ["{{baseUrl}}"],
+          "path": ["v1", "reports", "{{jobId}}", "download"]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('status 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "const expectedNoop = (pm.environment.get('storageDriver') || '').toLowerCase() === 'noop' || (pm.environment.get('enableExternalStorage') || '').toLowerCase() === 'false';",
+              "if (expectedNoop) {",
+              "  pm.test('noop response contract', function () {",
+              "    pm.expect(body.available).to.eql(false);",
+              "    pm.expect(body.mode).to.eql('noop');",
+              "    pm.expect(body.reason).to.eql('EXTERNAL_STORAGE_DISABLED');",
+              "  });",
+              "} else {",
+              "  pm.test('non-noop response contract', function () {",
+              "    pm.expect(body).to.have.property('available');",
+              "  });",
+              "}"
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "variable": [
+    { "key": "jobId", "value": "" },
+    { "key": "zipJobId", "value": "" },
+    { "key": "reduceJobId", "value": "" },
+    { "key": "scheduleId", "value": "" },
+    { "key": "idempotencyKey", "value": "" }
+  ]
+}

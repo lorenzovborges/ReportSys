@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "baseUrl": ".",
+    "paths": {
+      "@reportsys/contracts": ["packages/contracts/src"],
+      "@reportsys/core": ["packages/core/src"],
+      "@reportsys/report-generators": ["packages/report-generators/src"],
+      "@reportsys/storage-s3": ["packages/storage-s3/src"]
+    },
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "declaration": true,
+    "sourceMap": true,
+    "resolveJsonModule": true,
+    "outDir": "dist"
+  }
+}

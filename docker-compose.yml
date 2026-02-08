@@ -1,0 +1,190 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  mongo1:
+    image: mongo:7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo1_data:/data/db
+
+  mongo2:
+    image: mongo:7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27018:27017"
+    volumes:
+      - mongo2_data:/data/db
+
+  mongo3:
+    image: mongo:7
+    command: ["mongod", "--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
+    ports:
+      - "27019:27017"
+    volumes:
+      - mongo3_data:/data/db
+
+  mongo-init-rs:
+    image: mongo:7
+    depends_on:
+      - mongo1
+      - mongo2
+      - mongo3
+    volumes:
+      - ./infrastructure/mongo-init/init-replica.js:/scripts/init-replica.js:ro
+    entrypoint:
+      - bash
+      - -lc
+      - |
+        until mongosh --host mongo1 --port 27017 --eval "db.adminCommand({ ping: 1 })" >/dev/null 2>&1; do
+          echo "waiting for mongo...";
+          sleep 2;
+        done
+        mongosh --host mongo1 --port 27017 /scripts/init-replica.js
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+
+  mc-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        until mc alias set local http://minio:9000 ${S3_ACCESS_KEY_ID:-minioadmin} ${S3_SECRET_ACCESS_KEY:-minioadmin}; do
+          echo "waiting for minio...";
+          sleep 2;
+        done
+        mc mb -p local/${S3_BUCKET:-reportsys} || true
+        mc anonymous set none local/${S3_BUCKET:-reportsys} || true
+
+  api:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile
+      args:
+        SERVICE: api
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      PORT: ${PORT:-3000}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-reportsys}
+      MONGODB_WRITE_URI: ${MONGODB_WRITE_URI:-mongodb://mongo1:27017/reportsys?replicaSet=rs0}
+      MONGODB_REPORT_READ_URI: ${MONGODB_REPORT_READ_URI:-mongodb://mongo3:27017/reportsys?replicaSet=rs0&readPreference=secondary&directConnection=true}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-minio}
+      ENABLE_EXTERNAL_STORAGE: ${ENABLE_EXTERNAL_STORAGE:-true}
+      INTEGRATION_STRICT_MODE: ${INTEGRATION_STRICT_MODE:-false}
+      ENABLE_WEBHOOKS: ${ENABLE_WEBHOOKS:-false}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-reportsys}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      FILESYSTEM_STORAGE_PATH: ${FILESYSTEM_STORAGE_PATH:-/data/reports}
+      SIGNED_URL_TTL_SECONDS: ${SIGNED_URL_TTL_SECONDS:-900}
+      REPORT_MAX_CONCURRENCY: ${REPORT_MAX_CONCURRENCY:-4}
+      REPORT_BATCH_SIZE: ${REPORT_BATCH_SIZE:-2000}
+      REPORT_STREAM_HIGH_WATER_MARK: ${REPORT_STREAM_HIGH_WATER_MARK:-65536}
+      REPORT_PARTITION_DEFAULT_CHUNKS: ${REPORT_PARTITION_DEFAULT_CHUNKS:-32}
+      REPORT_PARTITION_MAX_CONCURRENCY: ${REPORT_PARTITION_MAX_CONCURRENCY:-4}
+      REPORT_REDUCE_ENGINE_V2_ENABLED: ${REPORT_REDUCE_ENGINE_V2_ENABLED:-false}
+      REPORT_ZIP_MULTIPASS_ENABLED: ${REPORT_ZIP_MULTIPASS_ENABLED:-false}
+      REPORT_ALLOWED_SOURCE_COLLECTIONS: ${REPORT_ALLOWED_SOURCE_COLLECTIONS:-reportSource}
+      REPORT_REDUCE_MAX_GROUPS: ${REPORT_REDUCE_MAX_GROUPS:-500000}
+      REPORT_SOURCE_INDEX_MANAGEMENT_ENABLED: ${REPORT_SOURCE_INDEX_MANAGEMENT_ENABLED:-true}
+      REPORT_TMP_DIR: ${REPORT_TMP_DIR:-/tmp/reportsys}
+      REPORT_TMP_MAX_BYTES: ${REPORT_TMP_MAX_BYTES:-2147483648}
+      REPORT_PDF_MAX_ROWS: ${REPORT_PDF_MAX_ROWS:-10000}
+      ARTIFACT_RETENTION_DAYS: ${ARTIFACT_RETENTION_DAYS:-30}
+      API_KEY_HASH_PEPPER: ${API_KEY_HASH_PEPPER:-change-me}
+      DEV_API_KEY: ${DEV_API_KEY:-local-dev-key}
+      SCHEDULE_POLL_INTERVAL_MS: ${SCHEDULE_POLL_INTERVAL_MS:-30000}
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo-init-rs:
+        condition: service_completed_successfully
+      mc-init:
+        condition: service_completed_successfully
+    ports:
+      - "${API_HOST_PORT:-3000}:${PORT:-3000}"
+
+  worker:
+    build:
+      context: .
+      dockerfile: infrastructure/docker/Dockerfile
+      args:
+        SERVICE: worker
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      MONGODB_DB_NAME: ${MONGODB_DB_NAME:-reportsys}
+      MONGODB_WRITE_URI: ${MONGODB_WRITE_URI:-mongodb://mongo1:27017/reportsys?replicaSet=rs0}
+      MONGODB_REPORT_READ_URI: ${MONGODB_REPORT_READ_URI:-mongodb://mongo3:27017/reportsys?replicaSet=rs0&readPreference=secondary&directConnection=true}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-minio}
+      ENABLE_EXTERNAL_STORAGE: ${ENABLE_EXTERNAL_STORAGE:-true}
+      INTEGRATION_STRICT_MODE: ${INTEGRATION_STRICT_MODE:-false}
+      ENABLE_WEBHOOKS: ${ENABLE_WEBHOOKS:-false}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      S3_BUCKET: ${S3_BUCKET:-reportsys}
+      S3_PUBLIC_ENDPOINT: ${S3_PUBLIC_ENDPOINT:-http://localhost:9000}
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-minioadmin}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-minioadmin}
+      S3_FORCE_PATH_STYLE: ${S3_FORCE_PATH_STYLE:-true}
+      FILESYSTEM_STORAGE_PATH: ${FILESYSTEM_STORAGE_PATH:-/data/reports}
+      SIGNED_URL_TTL_SECONDS: ${SIGNED_URL_TTL_SECONDS:-900}
+      REPORT_MAX_CONCURRENCY: ${REPORT_MAX_CONCURRENCY:-4}
+      REPORT_BATCH_SIZE: ${REPORT_BATCH_SIZE:-2000}
+      REPORT_STREAM_HIGH_WATER_MARK: ${REPORT_STREAM_HIGH_WATER_MARK:-65536}
+      REPORT_PARTITION_DEFAULT_CHUNKS: ${REPORT_PARTITION_DEFAULT_CHUNKS:-32}
+      REPORT_PARTITION_MAX_CONCURRENCY: ${REPORT_PARTITION_MAX_CONCURRENCY:-4}
+      REPORT_REDUCE_ENGINE_V2_ENABLED: ${REPORT_REDUCE_ENGINE_V2_ENABLED:-false}
+      REPORT_ZIP_MULTIPASS_ENABLED: ${REPORT_ZIP_MULTIPASS_ENABLED:-false}
+      REPORT_ALLOWED_SOURCE_COLLECTIONS: ${REPORT_ALLOWED_SOURCE_COLLECTIONS:-reportSource}
+      REPORT_REDUCE_MAX_GROUPS: ${REPORT_REDUCE_MAX_GROUPS:-500000}
+      REPORT_SOURCE_INDEX_MANAGEMENT_ENABLED: ${REPORT_SOURCE_INDEX_MANAGEMENT_ENABLED:-true}
+      REPORT_TMP_DIR: ${REPORT_TMP_DIR:-/tmp/reportsys}
+      REPORT_TMP_MAX_BYTES: ${REPORT_TMP_MAX_BYTES:-2147483648}
+      REPORT_PDF_MAX_ROWS: ${REPORT_PDF_MAX_ROWS:-10000}
+      ARTIFACT_RETENTION_DAYS: ${ARTIFACT_RETENTION_DAYS:-30}
+      API_KEY_HASH_PEPPER: ${API_KEY_HASH_PEPPER:-change-me}
+      DEV_API_KEY: ${DEV_API_KEY:-local-dev-key}
+      SCHEDULE_POLL_INTERVAL_MS: ${SCHEDULE_POLL_INTERVAL_MS:-30000}
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo-init-rs:
+        condition: service_completed_successfully
+      mc-init:
+        condition: service_completed_successfully
+
+volumes:
+  mongo1_data:
+  mongo2_data:
+  mongo3_data:
+  minio_data:
